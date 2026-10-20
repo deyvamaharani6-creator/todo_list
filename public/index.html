@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Todo List | Catatan Tugas</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <div class="eyebrow">DAILY  DEY</div>
+      <h1>Todo List<span>.</span></h1>
+      <p>Catat tugasmu, selesaikan satu per satu.</p>
+    </header>
+
+    <section class="summary" aria-label="Ringkasan tugas">
+      <div class="summary-card"><span>Total tugas</span><strong id="totalCount">0</strong></div>
+      <div class="summary-card"><span>Belum selesai</span><strong id="pendingCount">0</strong></div>
+      <div class="summary-card"><span>Selesai</span><strong id="doneCount">0</strong></div>
+    </section>
+
+    <section class="panel">
+      <h2 id="formHeading">Tambah tugas baru</h2>
+      <form id="todoForm">
+        <label for="title">Nama tugas <span>*</span></label>
+        <input id="title" name="title" maxlength="200" placeholder="Contoh: Mengerjakan tugas CRUD" required>
+        <label for="description">Deskripsi (opsional)</label>
+        <textarea id="description" name="description" rows="3" placeholder="Tulis detail tugas di sini..."></textarea>
+        <div class="form-actions">
+          <button class="primary" type="submit" id="submitButton">+ Tambah tugas</button>
+          <button class="secondary hidden" type="button" id="cancelEdit">Batal</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="task-section">
+      <div class="section-heading">
+        <h2>Daftar tugas</h2>
+        <select id="filter" aria-label="Filter tugas">
+          <option value="all">Semua tugas</option>
+          <option value="pending">Belum selesai</option>
+          <option value="done">Selesai</option>
+        </select>
+      </div>
+      <p id="notice" class="notice" role="status"></p>
+      <div id="todoList" class="todo-list"></div>
+      <div id="emptyState" class="empty-state">Belum ada tugas. Tambahkan tugas pertamamu, yuk!</div>
+    </section>
+    <footer>Todo List CRUD · Node.js · JavaScript · MySQL Aiven</footer>
+  </main>
+</body>
+</html>
