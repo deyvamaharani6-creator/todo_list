@@ -38,134 +38,110 @@ function createDbConfig() {
 
 let pool;
 
+
 async function initializeDatabase() {
-  const required = ["DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD"];
-  const missing = required.filter((key) => !process.env[key]);
+  const required = [
+    "DB_HOST",
+    "DB_PORT",
+    "DB_USER",
+    "DB_PASSWORD"
+  ];
+
+  const missing = required.filter(
+    (key) => !process.env[key]
+  );
+
   if (missing.length) {
-    throw new Error(`Isi variabel berikut di file .env: ${missing.join(", ")}`);
+    throw new Error(
+      `Isi variabel berikut di file .env: ${missing.join(", ")}`
+    );
   }
 
   pool = mysql.createPool(createDbConfig());
+
+  // Tabel 1: categories
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS categories (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(100) NOT NULL UNIQUE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Tabel 2: todos
+  // Jika tabel sudah ada, struktur lamanya tetap dipertahankan.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS todos (
       id INT AUTO_INCREMENT PRIMARY KEY,
+      category_id INT NULL,
       title VARCHAR(200) NOT NULL,
       description TEXT,
       is_completed BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP
     )
   `);
-  console.log("Berhasil terhubung ke MySQL. Tabel todos siap digunakan.");
+
+  // Tambahkan category_id jika tabel todos sudah ada sebelumnya.
+  const [columns] = await pool.query(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'todos'
+      AND COLUMN_NAME = 'category_id'
+  `);
+
+  if (columns.length === 0) {
+    await pool.query(`
+      ALTER TABLE todos
+      ADD COLUMN category_id INT NULL
+    `);
+  }
+
+  // Hubungkan todos dengan categories menggunakan foreign key.
+  const [foreignKeys] = await pool.query(`
+    SELECT CONSTRAINT_NAME
+    FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'todos'
+      AND CONSTRAINT_NAME = 'fk_todos_category'
+  `);
+
+  if (foreignKeys.length === 0) {
+    await pool.query(`
+      ALTER TABLE todos
+      ADD CONSTRAINT fk_todos_category
+      FOREIGN KEY (category_id)
+      REFERENCES categories(id)
+      ON UPDATE CASCADE
+      ON DELETE SET NULL
+    `);
+  }
+
+  // Masukkan kategori awal jika belum tersedia.
+  await pool.query(`
+    INSERT IGNORE INTO categories (name)
+    VALUES ('Sekolah'), ('Pribadi'), ('Lainnya')
+  `);
+
+  console.log(
+    "Berhasil terhubung ke MySQL. " +
+    "Tabel categories dan todos siap digunakan."
+  );
 }
-
-function cleanText(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-// READ: ambil semua tugas
-app.get("/api/todos", async (req, res) => {
-  try {
-    const [rows] = await pool.query(
-      "SELECT id, title, description, is_completed, created_at, updated_at FROM todos ORDER BY created_at DESC"
-    );
-    res.json(rows);
-  } catch (error) {
-    console.error("Gagal mengambil todo:", error.message);
-    res.status(500).json({ message: "Gagal mengambil daftar tugas." });
-  }
-});
-
-// CREATE: tambah tugas
-app.post("/api/todos", async (req, res) => {
-  const title = cleanText(req.body.title);
-  const description = cleanText(req.body.description);
-  if (!title) return res.status(400).json({ message: "Nama tugas wajib diisi." });
-
-  try {
-    const [result] = await pool.execute(
-      "INSERT INTO todos (title, description) VALUES (?, ?)",
-      [title, description || null]
-    );
-    const [rows] = await pool.execute("SELECT * FROM todos WHERE id = ?", [result.insertId]);
-    res.status(201).json(rows[0]);
-  } catch (error) {
-    console.error("Gagal menambah todo:", error.message);
-    res.status(500).json({ message: "Gagal menambahkan tugas. Periksa koneksi database." });
-  }
-});
-
-// UPDATE: ubah judul/deskripsi/status
-app.put("/api/todos/:id", async (req, res) => {
-  const id = Number(req.params.id);
-  const title = cleanText(req.body.title);
-  const description = cleanText(req.body.description);
-  const isCompleted = req.body.is_completed === true || req.body.is_completed === 1;
-
-  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ message: "ID tugas tidak valid." });
-  if (!title) return res.status(400).json({ message: "Nama tugas wajib diisi." });
-
-  try {
-    const [result] = await pool.execute(
-      "UPDATE todos SET title = ?, description = ?, is_completed = ? WHERE id = ?",
-      [title, description || null, isCompleted, id]
-    );
-    if (!result.affectedRows) return res.status(404).json({ message: "Tugas tidak ditemukan." });
-    const [rows] = await pool.execute("SELECT * FROM todos WHERE id = ?", [id]);
-    res.json(rows[0]);
-  } catch (error) {
-    console.error("Gagal memperbarui todo:", error.message);
-    res.status(500).json({ message: "Gagal memperbarui tugas." });
-  }
-});
-
-// UPDATE khusus status selesai/belum
-app.patch("/api/todos/:id/status", async (req, res) => {
-  const id = Number(req.params.id);
-  const isCompleted = req.body.is_completed === true;
-  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ message: "ID tugas tidak valid." });
-
-  try {
-    const [result] = await pool.execute("UPDATE todos SET is_completed = ? WHERE id = ?", [isCompleted, id]);
-    if (!result.affectedRows) return res.status(404).json({ message: "Tugas tidak ditemukan." });
-    const [rows] = await pool.execute("SELECT * FROM todos WHERE id = ?", [id]);
-    res.json(rows[0]);
-  } catch (error) {
-    console.error("Gagal mengubah status:", error.message);
-    res.status(500).json({ message: "Gagal mengubah status tugas." });
-  }
-});
-
-// DELETE: hapus tugas
-app.delete("/api/todos/:id", async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ message: "ID tugas tidak valid." });
-
-  try {
-    const [result] = await pool.execute("DELETE FROM todos WHERE id = ?", [id]);
-    if (!result.affectedRows) return res.status(404).json({ message: "Tugas tidak ditemukan." });
-    res.json({ message: "Tugas berhasil dihapus." });
-  } catch (error) {
-    console.error("Gagal menghapus todo:", error.message);
-    res.status(500).json({ message: "Gagal menghapus tugas." });
-  }
-});
-
-app.get("/api/health", async (req, res) => {
-  try {
-    await pool.query("SELECT 1");
-    res.json({ status: "ok", database: "connected" });
-  } catch {
-    res.status(500).json({ status: "error", database: "disconnected" });
-  }
-});
-
 initializeDatabase()
   .then(() => {
-    app.listen(PORT, () => console.log(`Todo List berjalan di http://localhost:${PORT}`));
+    app.listen(PORT, () => {
+      console.log(
+        `Todo List berjalan di http://localhost:${PORT}`
+      );
+    });
   })
   .catch((error) => {
     console.error("\nGagal memulai aplikasi:", error.message);
-    console.error("Periksa file .env, detail layanan MySQL Aiven, dan sertifikat ca.pem.\n");
+    console.error(
+      "Periksa file .env, detail layanan MySQL Aiven, dan sertifikat ca.pem.\n"
+    );
     process.exit(1);
   });
